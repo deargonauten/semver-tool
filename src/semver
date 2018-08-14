@@ -9,7 +9,7 @@ PROG_VERSION=2.0.0
 
 USAGE="\
 Usage:
-  $PROG bump (major|minor|patch|release|prerel <prerel>|build <build>) <version>
+  $PROG bump (major|minor/feature|patch/bug|release|prerel <prerel>|build <build>) <version|file> (---write|-w)
   $PROG compare <version> <other_version>
   $PROG --help
   $PROG --version
@@ -23,6 +23,10 @@ Arguments:
              BUILD is also an optional string composed of alphanumeric
              characters and hyphens.
 
+             For bump it is also possible to provide a file path. Use the -w flag
+             or --write flag to write the output back to the file.
+
+
   <other_version>  See <version> definition.
 
   <prerel>  String that must be composed of alphanumeric characters and hyphens.
@@ -32,11 +36,13 @@ Arguments:
 Options:
   -v, --version          Print the version of this tool.
   -h, --help             Print this help message.
+  -w, --write            Write the output to the file it read from (only applicable when you provide a file)
 
 Commands:
   bump     Bump <version> by one of major, minor, patch, prerel, build
            or a forced potentialy conflicting version. The bumped version is
            shown to stdout.
+           Or written back to the file it checked.
 
   compare  Compare <version> with <other_version>, output to stdout the
            following values: -1 if <other_version> is newer, 0 if equal, 1 if
@@ -107,21 +113,48 @@ function compare-version {
 }
 
 function command-bump {
-  local new; local version; local sub_version; local command;
+  local new; local version; local sub_version; local command; local file; local write;
 
   case $# in
     2) case $1 in
-        major|minor|patch|release) command=$1; version=$2;;
+        major|minor|patch|release|feature|bug) command=$1; version=$2;;
         *) usage-help;;
        esac ;;
     3) case $1 in
-        prerel|build) command=$1; sub_version=$2 version=$3 ;;
+        major|minor|patch|release|feature|bug)
+			command=$1;
+			version=$2;
+			case $3 in
+                --write|-w) write="true" ;;
+                *) usage-help;;
+            esac;;
+        prerel|build)
+            command=$1;
+            sub_version=$2
+            version=$3;;
         *) usage-help;;
+       esac ;;
+    4) case $1 in
+        prerel|build)
+            command=$1;
+            sub_version=$2
+            version=$3
+            case $4 in
+                --write|-w) write="true" ;;
+                *) usage-help;;
+            esac;;
+         *) usage-help;;
        esac ;;
     *) usage-help;;
   esac
 
+  if [ -f $version ]; then
+    file=$version
+    version=$(cat $version)
+  fi
+
   validate-version "$version" parts
+  
   # shellcheck disable=SC2154
   local major="${parts[0]}"
   local minor="${parts[1]}"
@@ -131,8 +164,8 @@ function command-bump {
 
   case "$command" in
     major) new="$((major + 1)).0.0";;
-    minor) new="${major}.$((minor + 1)).0";;
-    patch) new="${major}.${minor}.$((patch + 1))";;
+    minor|feature) new="${major}.$((minor + 1)).0";;
+    patch|bug) new="${major}.${minor}.$((patch + 1))";;
     release) new="${major}.${minor}.${patch}";;
     prerel) new=$(validate-version "${major}.${minor}.${patch}-${sub_version}");;
     build) new=$(validate-version "${major}.${minor}.${patch}${prere}+${sub_version}");;
@@ -140,6 +173,9 @@ function command-bump {
   esac
 
   echo "$new"
+  if [ ! -z "$file" ] && [ ! -z "$write" ]; then
+    echo "$new" > $file
+  fi
   exit 0
 }
 
